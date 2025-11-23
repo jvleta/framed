@@ -1,7 +1,7 @@
-FRAMED
-======
+# FRAMED
 
 This module implements a complete 2D finite element solver for frame structures.
+
 The solver uses Euler-Bernoulli beam elements with 3 degrees of freedom per node:
 - u: horizontal displacement
 - v: vertical displacement
