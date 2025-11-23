@@ -1,133 +1,8 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import spsolve
 
-
-def plot_frame(frame, displacements=None, scale_factor=1.0):
-    """
-    Plot the frame structure showing original and optionally deformed configurations.
-
-    Parameters:
-    -----------
-    frame : dict
-        Frame geometry definition
-    displacements : array_like, optional
-        Nodal displacement vector [u1, v1, θ1, u2, v2, θ2, ...]
-    scale_factor : float
-        Scaling factor for displacement visualization (default: 1.0)
-
-    Notes:
-    ------
-    - Blue solid lines: Original frame configuration
-    - Red dashed lines: Deformed frame configuration (if displacements provided)
-    - Green arrows: Displacement vectors at nodes
-    - Node numbering and connectivity determined by discretize_frame()
-    """
-    plt.figure(figsize=(12, 8))
-
-    # Get nodes and elements for plotting
-    nodes, elements = discretize_frame(frame)
-
-    # Plot original structure elements
-    for element in elements:
-        node1_idx, node2_idx = element
-        x_coords = [nodes[node1_idx][0], nodes[node2_idx][0]]
-        y_coords = [nodes[node1_idx][1], nodes[node2_idx][1]]
-        plt.plot(
-            x_coords,
-            y_coords,
-            "b-",
-            linewidth=3,
-            alpha=0.7,
-            label="Original" if element[0] == 0 else "",
-        )
-
-    # Plot original nodes
-    plt.scatter(
-        nodes[:, 0], nodes[:, 1], c="blue", s=50, zorder=5, label="Original nodes"
-    )
-
-    # Plot deformed structure if displacements are provided
-    if displacements is not None:
-        # Extract only translational displacements (u, v) ignoring rotations (θ)
-        # Each node has 3 DOF: [u, v, θ], so we extract every 3rd and 3rd+1 values
-        u_displacements = np.zeros((len(nodes), 2))
-        for i in range(len(nodes)):
-            u_displacements[i, 0] = displacements[3 * i]  # u displacement (horizontal)
-            u_displacements[i, 1] = displacements[
-                3 * i + 1
-            ]  # v displacement (vertical)
-
-        # Calculate deformed node positions
-        deformed_nodes = nodes + u_displacements * scale_factor
-
-        # Plot deformed elements
-        for element in elements:
-            node1_idx, node2_idx = element
-            x_coords = [deformed_nodes[node1_idx][0], deformed_nodes[node2_idx][0]]
-            y_coords = [deformed_nodes[node1_idx][1], deformed_nodes[node2_idx][1]]
-            plt.plot(
-                x_coords,
-                y_coords,
-                "r--",
-                linewidth=3,
-                alpha=0.7,
-                label="Deformed" if element[0] == 0 else "",
-            )
-
-        # Plot deformed nodes
-        plt.scatter(
-            deformed_nodes[:, 0],
-            deformed_nodes[:, 1],
-            c="red",
-            s=50,
-            zorder=5,
-            label="Deformed nodes",
-        )
-
-        # Add displacement vectors for significant displacements
-        for i in range(len(nodes)):
-            dx = u_displacements[i, 0] * scale_factor
-            dy = u_displacements[i, 1] * scale_factor
-            if abs(dx) > 1e-8 or abs(dy) > 1e-8:  # Only plot significant displacements
-                plt.arrow(
-                    nodes[i][0],
-                    nodes[i][1],
-                    dx,
-                    dy,
-                    head_width=0.03,
-                    head_length=0.03,
-                    fc="green",
-                    ec="green",
-                    alpha=0.7,
-                )
-
-    # Set plot properties
-    plt.xlim(-0.3, 1.3)
-    plt.ylim(-0.5, 6)
-    plt.gca().set_aspect("equal", adjustable="box")
-    plt.title(
-        f"Frame Structure{' - Deformed vs Original' if displacements is not None else ''}"
-    )
-    plt.xlabel("X-axis (m)")
-    plt.ylabel("Y-axis (m)")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-
-    # Add scale factor info if deformed
-    if displacements is not None and scale_factor != 1.0:
-        plt.text(
-            0.02,
-            0.98,
-            f"Deformation scale: {scale_factor}x",
-            transform=plt.gca().transAxes,
-            verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
-        )
-
-    plt.tight_layout()
-    plt.show()
+from plotter import plot_frame, plot_load_displacement
 
 def discretize_frame(frame, num_elements_per_leg=5, num_elements_beam=5):
     """
@@ -607,7 +482,8 @@ def main(frame):
 
     # Step 1: Display original frame structure
     print("\n1. Original Frame Structure:")
-    plot_frame(frame)
+    preview_nodes, preview_elements = discretize_frame(frame)
+    plot_frame(preview_nodes, preview_elements)
 
     # Step 2: Solve finite element problem
     load_value = 1000  # 1000 N horizontal load (typical wind load magnitude)
@@ -652,11 +528,11 @@ def main(frame):
 
     # Step 5: Visualize results with exaggerated deformation
     print(f"\n4. Displaying deformed frame (scaled {1000}x for visibility):")
-    plot_frame(frame, displacements, scale_factor=1000)
+    plot_frame(nodes, elements, displacements, scale_factor=1000)
 
     # Step 6: Show realistic deformation scale
     print(f"\n5. Displaying with realistic deformation scale:")
-    plot_frame(frame, displacements, scale_factor=1)
+    plot_frame(nodes, elements, displacements, scale_factor=1)
 
     # Analysis summary
     print(
@@ -668,35 +544,6 @@ def main(frame):
     )
 
     return nodes, elements, displacements
-
-
-def plot_load_displacement(load_cases, max_displacements):
-    """Plot load vs displacement and linear fit for quick visual verification."""
-    loads = np.asarray(load_cases, dtype=float)
-    disps_mm = np.asarray(max_displacements, dtype=float) * 1000.0
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(loads, disps_mm, "bo-", linewidth=2, markersize=8)
-    plt.xlabel("Applied Load (N)")
-    plt.ylabel("Maximum Displacement (mm)")
-    plt.title("Load vs Maximum Displacement (Linear Elastic Analysis)")
-    plt.grid(True, alpha=0.3)
-
-    slope_m_per_n = disps_mm[-1] / (loads[-1] * 1000) if loads[-1] != 0 else 0
-    linear_fit_mm = slope_m_per_n * loads * 1000 if slope_m_per_n else np.zeros_like(loads)
-    plt.plot(
-        loads,
-        linear_fit_mm,
-        "r--",
-        alpha=0.7,
-        label=f"Linear fit (slope={slope_m_per_n*1e6:.3f} mm/N)" if loads[-1] != 0 else "Linear fit",
-    )
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
-
-
 def analyze_load_cases(frame):
     """
     Analyze multiple load cases to demonstrate solver capabilities and verify linearity.
