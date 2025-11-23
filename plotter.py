@@ -96,7 +96,12 @@ def plot_frame(nodes, elements, displacements=None, scale_factor=1.0):
 def plot_load_displacement(load_cases, max_displacements):
     """Plot load vs displacement and linear fit for quick visual verification."""
     loads = np.asarray(load_cases, dtype=float)
-    disps_mm = np.asarray(max_displacements, dtype=float) * 1000.0
+    disps_m = np.asarray(max_displacements, dtype=float)
+
+    if loads.size == 0 or disps_m.size == 0:
+        return
+
+    disps_mm = disps_m * 1000.0
 
     plt.figure(figsize=(10, 6))
     plt.plot(loads, disps_mm, "bo-", linewidth=2, markersize=8)
@@ -105,14 +110,16 @@ def plot_load_displacement(load_cases, max_displacements):
     plt.title("Load vs Maximum Displacement (Linear Elastic Analysis)")
     plt.grid(True, alpha=0.3)
 
-    slope_m_per_n = disps_mm[-1] / (loads[-1] * 1000) if loads[-1] != 0 else 0
-    linear_fit_mm = slope_m_per_n * loads * 1000 if slope_m_per_n else np.zeros_like(loads)
+    has_load = loads[-1] != 0
+    slope_m_per_n = disps_m[-1] / loads[-1] if has_load else 0.0
+    slope_mm_per_n = slope_m_per_n * 1000
+    linear_fit_mm = slope_m_per_n * loads * 1000 if has_load else np.zeros_like(loads)
     plt.plot(
         loads,
         linear_fit_mm,
         "r--",
         alpha=0.7,
-        label=f"Linear fit (slope={slope_m_per_n*1e6:.3f} mm/N)" if loads[-1] != 0 else "Linear fit",
+        label=f"Linear fit (slope={slope_mm_per_n:.3f} mm/N)" if has_load else "Linear fit",
     )
     plt.legend()
 
