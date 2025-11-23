@@ -4,7 +4,8 @@ from scipy.sparse.linalg import spsolve
 
 from plotter import plot_frame, plot_load_displacement
 
-def discretize_frame(frame, num_elements_per_leg=5, num_elements_beam=5):
+
+def discretize_frame(num_elements_per_leg=5, num_elements_beam=5):
     """
     Discretize the frame structure into finite elements and generate node coordinates.
 
@@ -15,8 +16,6 @@ def discretize_frame(frame, num_elements_per_leg=5, num_elements_beam=5):
 
     Parameters:
     -----------
-    frame : dict
-        Frame geometry definition containing legs and beam specifications
     num_elements_per_leg : int
         Number of elements per leg (default: 5)
     num_elements_beam : int
@@ -422,7 +421,7 @@ def solve_frame(frame, load_value, num_elements_per_leg=5, num_elements_beam=5):
     I = 1e-4  # Second moment of area (m⁴) - for rectangular section
 
     # Step 1: Discretize frame geometry into finite element mesh
-    nodes, elements = discretize_frame(frame, num_elements_per_leg, num_elements_beam)
+    nodes, elements = discretize_frame(num_elements_per_leg, num_elements_beam)
     n_nodes = len(nodes)
     n_dof = 3 * n_nodes  # 3 DOF per node
 
@@ -482,7 +481,7 @@ def main(frame):
 
     # Step 1: Display original frame structure
     print("\n1. Original Frame Structure:")
-    preview_nodes, preview_elements = discretize_frame(frame)
+    preview_nodes, preview_elements = discretize_frame()
     plot_frame(preview_nodes, preview_elements)
 
     # Step 2: Solve finite element problem
