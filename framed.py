@@ -670,6 +670,33 @@ def main(frame):
     return nodes, elements, displacements
 
 
+def plot_load_displacement(load_cases, max_displacements):
+    """Plot load vs displacement and linear fit for quick visual verification."""
+    loads = np.asarray(load_cases, dtype=float)
+    disps_mm = np.asarray(max_displacements, dtype=float) * 1000.0
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(loads, disps_mm, "bo-", linewidth=2, markersize=8)
+    plt.xlabel("Applied Load (N)")
+    plt.ylabel("Maximum Displacement (mm)")
+    plt.title("Load vs Maximum Displacement (Linear Elastic Analysis)")
+    plt.grid(True, alpha=0.3)
+
+    slope_m_per_n = disps_mm[-1] / (loads[-1] * 1000) if loads[-1] != 0 else 0
+    linear_fit_mm = slope_m_per_n * loads * 1000 if slope_m_per_n else np.zeros_like(loads)
+    plt.plot(
+        loads,
+        linear_fit_mm,
+        "r--",
+        alpha=0.7,
+        label=f"Linear fit (slope={slope_m_per_n*1e6:.3f} mm/N)" if loads[-1] != 0 else "Linear fit",
+    )
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
 def analyze_load_cases(frame):
     """
     Analyze multiple load cases to demonstrate solver capabilities and verify linearity.
@@ -716,34 +743,7 @@ def analyze_load_cases(frame):
 
         print(f"Load: {load:4d} N -> Max displacement: {max_disp*1000:.3f} mm")
 
-    # Plot load vs displacement relationship
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        load_cases,
-        [d * 1000 for d in max_displacements],
-        "bo-",
-        linewidth=2,
-        markersize=8,
-    )
-    plt.xlabel("Applied Load (N)")
-    plt.ylabel("Maximum Displacement (mm)")
-    plt.title("Load vs Maximum Displacement (Linear Elastic Analysis)")
-    plt.grid(True, alpha=0.3)
-
-    # Add linear fit line to verify linearity
-    slope = max_displacements[-1] / load_cases[-1]  # mm/N
-    linear_fit = [slope * load * 1000 for load in load_cases]
-    plt.plot(
-        load_cases,
-        linear_fit,
-        "r--",
-        alpha=0.7,
-        label=f"Linear fit (slope={slope*1e6:.3f} mm/N)",
-    )
-    plt.legend()
-
-    plt.tight_layout()
-    plt.show()
+    plot_load_displacement(load_cases, max_displacements)
 
     # Check linearity (should be constant for elastic analysis)
     displacement_per_unit_load = [d / l for d, l in zip(max_displacements, load_cases)]
