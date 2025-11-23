@@ -5,17 +5,19 @@ from scipy.sparse.linalg import spsolve
 from plotter import plot_frame, plot_load_displacement
 
 
-def discretize_frame(num_elements_per_leg=5, num_elements_beam=5):
+def discretize_frame(frame, num_elements_per_leg=5, num_elements_beam=5):
     """
-    Discretize the frame structure into finite elements and generate node coordinates.
+    Discretize the provided frame geometry into finite elements and generate node coordinates.
 
     This function creates a mesh of the portal frame by:
-    1. Creating nodes along each leg from bottom to top
-    2. Creating internal nodes along the beam (excluding endpoints)
+    1. Creating nodes along each leg from bottom to top using leg positions/lengths
+    2. Creating internal nodes along the beam (excluding endpoints supplied by the legs)
     3. Defining element connectivity between adjacent nodes
 
     Parameters:
     -----------
+    frame : dict
+        Frame geometry definition containing legs and beam specifications
     num_elements_per_leg : int
         Number of elements per leg (default: 5)
     num_elements_beam : int
@@ -27,61 +29,63 @@ def discretize_frame(num_elements_per_leg=5, num_elements_beam=5):
         Node coordinates [x, y] for each node
     elements : ndarray, shape (n_elements, 2)
         Element connectivity [node1_id, node2_id] for each element
-
-    Node Numbering Scheme:
-    ----------------------
-    - Nodes 0-5: Left leg (bottom to top)
-    - Nodes 6-11: Right leg (bottom to top)
-    - Nodes 12-15: Internal beam nodes (left to right)
-
-    Element Connectivity:
-    ---------------------
-    - Elements 0-4: Left leg elements
-    - Elements 5-9: Right leg elements
-    - Elements 10-14: Beam elements (including connections to leg tops)
     """
     nodes = []
 
-    # Create nodes for left leg (from bottom to top) - nodes 0 to 5
-    y_coords = np.linspace(0, 5, num_elements_per_leg + 1)
-    for y in y_coords:
-        nodes.append([0.0, y])
+    # Left leg nodes (bottom to top)
+    left_leg = frame["legs"][0]
+    left_y = np.linspace(
+        left_leg["y"], left_leg["y"] + left_leg["length"], num_elements_per_leg + 1
+    )
+    for y in left_y:
+        nodes.append([left_leg["x"], y])
 
-    # Create nodes for right leg (from bottom to top) - nodes 6 to 11
-    for y in y_coords:
-        nodes.append([1.0, y])
+    # Right leg nodes (bottom to top)
+    right_leg = frame["legs"][1]
+    right_y = np.linspace(
+        right_leg["y"], right_leg["y"] + right_leg["length"], num_elements_per_leg + 1
+    )
+    for y in right_y:
+        nodes.append([right_leg["x"], y])
 
-    # Create internal beam nodes (excluding endpoints which are already leg nodes) - nodes 12 to 15
-    # This ensures proper connectivity between legs and beam
-    x_coords = np.linspace(0, 1, num_elements_beam + 1)
-    for i in range(1, num_elements_beam):  # Skip endpoints (0 and 1)
-        nodes.append([x_coords[i], 5.0])
+    # Internal beam nodes (excluding endpoints already provided by leg tops)
+    beam = frame["beam"]
+    beam_x = np.linspace(beam["x1"], beam["x2"], num_elements_beam + 1)
+    beam_y = np.linspace(beam["y1"], beam["y2"], num_elements_beam + 1)
+    for i in range(1, num_elements_beam):
+        nodes.append([beam_x[i], beam_y[i]])
 
     nodes = np.array(nodes)
     elements = []
 
-    # Elements for left leg (nodes 0-5)
-    # Creates 5 elements connecting consecutive nodes along the left leg
+    left_leg_count = num_elements_per_leg + 1
+    right_leg_start = left_leg_count
+    right_leg_count = num_elements_per_leg + 1
+    beam_start = right_leg_start + right_leg_count
+
+    # Elements for left leg
     for i in range(num_elements_per_leg):
         elements.append([i, i + 1])
 
-    # Elements for right leg (nodes 6-11)
-    # Creates 5 elements connecting consecutive nodes along the right leg
+    # Elements for right leg
     for i in range(num_elements_per_leg):
-        elements.append([6 + i, 6 + i + 1])
+        idx = right_leg_start + i
+        elements.append([idx, idx + 1])
 
-    # Elements for beam - connect top of left leg to internal nodes to top of right leg
-    # This creates a continuous beam across the top of the frame
+    # Elements for beam
+    left_top = left_leg_count - 1
+    right_top = right_leg_start + num_elements_per_leg
 
-    # Element from top of left leg (node 5) to first internal beam node (node 12)
-    elements.append([5, 12])
+    if num_elements_beam == 1:
+        elements.append([left_top, right_top])
+    else:
+        first_beam_node = beam_start
+        last_beam_node = beam_start + (num_elements_beam - 2)
 
-    # Internal beam elements connecting consecutive internal beam nodes
-    for i in range(num_elements_beam - 2):
-        elements.append([12 + i, 12 + i + 1])
-
-    # Element from last internal beam node to top of right leg (node 11)
-    elements.append([12 + num_elements_beam - 2, 11])
+        elements.append([left_top, first_beam_node])
+        for i in range(num_elements_beam - 2):
+            elements.append([beam_start + i, beam_start + i + 1])
+        elements.append([last_beam_node, right_top])
 
     return np.array(nodes), np.array(elements)
 
@@ -366,7 +370,14 @@ def apply_boundary_conditions_frame(K, F, fixed_nodes):
 
     return K_bc, F_bc
 
-def solve_frame(frame, load_value, num_elements_per_leg=5, num_elements_beam=5):
+def solve_frame(
+    frame,
+    load_value,
+    num_elements_per_leg=5,
+    num_elements_beam=5,
+    nodes=None,
+    elements=None,
+):
     """
     Complete finite element solver for the frame structure under lateral loading.
 
@@ -387,6 +398,10 @@ def solve_frame(frame, load_value, num_elements_per_leg=5, num_elements_beam=5):
         Number of elements per leg (default: 5)
     num_elements_beam : int
         Number of elements for beam (default: 5)
+    nodes : ndarray or None
+        Precomputed node coordinates; when provided, discretization is skipped
+    elements : ndarray or None
+        Precomputed element connectivity; when provided, discretization is skipped
 
     Returns:
     --------
@@ -421,7 +436,8 @@ def solve_frame(frame, load_value, num_elements_per_leg=5, num_elements_beam=5):
     I = 1e-4  # Second moment of area (m⁴) - for rectangular section
 
     # Step 1: Discretize frame geometry into finite element mesh
-    nodes, elements = discretize_frame(num_elements_per_leg, num_elements_beam)
+    if nodes is None or elements is None:
+        nodes, elements = discretize_frame(frame, num_elements_per_leg, num_elements_beam)
     n_nodes = len(nodes)
     n_dof = 3 * n_nodes  # 3 DOF per node
 
@@ -481,15 +497,18 @@ def main(frame):
 
     # Step 1: Display original frame structure
     print("\n1. Original Frame Structure:")
-    preview_nodes, preview_elements = discretize_frame()
-    plot_frame(preview_nodes, preview_elements)
+
+    mesh_nodes, mesh_elements = discretize_frame(frame)
+    plot_frame(mesh_nodes, mesh_elements)
 
     # Step 2: Solve finite element problem
     load_value = 1000  # 1000 N horizontal load (typical wind load magnitude)
     print(f"\n2. Solving frame with {load_value} N horizontal load...")
 
     # Execute finite element analysis
-    nodes, elements, displacements, forces, load_node = solve_frame(frame, load_value)
+    nodes, elements, displacements, forces, load_node = solve_frame(
+        frame, load_value, nodes=mesh_nodes, elements=mesh_elements
+    )
 
     # Display problem statistics
     print(f"   - Number of nodes: {len(nodes)}")
@@ -543,6 +562,7 @@ def main(frame):
     )
 
     return nodes, elements, displacements
+
 def analyze_load_cases(frame):
     """
     Analyze multiple load cases to demonstrate solver capabilities and verify linearity.
@@ -577,11 +597,14 @@ def analyze_load_cases(frame):
     # Define load cases ranging from light to heavy loading
     load_cases = [500, 1000, 2000, 5000]  # Different load magnitudes in N
     max_displacements = []
+    mesh_nodes, mesh_elements = discretize_frame(frame)
 
     # Analyze each load case
     for load in load_cases:
         # Solve frame for current load magnitude
-        nodes, elements, displacements, forces, load_node = solve_frame(frame, load)
+        nodes, elements, displacements, forces, load_node = solve_frame(
+            frame, load, nodes=mesh_nodes, elements=mesh_elements
+        )
 
         # Find maximum displacement (any DOF, any node)
         max_disp = np.max(np.abs(displacements))
@@ -619,6 +642,32 @@ def analyze_load_cases(frame):
 
     return load_cases, max_displacements
 
+def get_example_frame():
+    """
+    Generate a standard portal frame geometry for analysis.
+
+    This function defines a simple portal frame with:
+    - Two vertical legs of equal height
+    - A horizontal beam connecting the tops of the legs
+
+    Returns:
+    --------
+    frame : dict
+        Frame geometry definition containing legs and beam specifications
+    """
+    frame = {
+        "legs": [
+            {"x": 0, "y": 0, "length": 5},  # Left leg: 5m tall at x=0
+            {"x": 1, "y": 0, "length": 5},  # Right leg: 5m tall at x=1
+        ],
+        "beam": {
+            "x1": 0,
+            "y1": 5,  # Beam start point (top of left leg)
+            "x2": 1,
+            "y2": 5,  # Beam end point (top of right leg)
+        },
+    }
+    return frame
 
 if __name__ == "__main__":
     """
@@ -638,18 +687,8 @@ if __name__ == "__main__":
 
     # Define the geometry of a simple portal frame with two vertical legs
     # connected by a horizontal beam at the top
-    frame = {
-        "legs": [
-            {"x": 0, "y": 0, "length": 5},  # Left leg: 5m tall at x=0
-            {"x": 1, "y": 0, "length": 5},  # Right leg: 5m tall at x=1
-        ],
-        "beam": {
-            "x1": 0,
-            "y1": 5,  # Beam start point (top of left leg)
-            "x2": 1,
-            "y2": 5,  # Beam end point (top of right leg)
-        },
-    }
+    frame = get_example_frame()
+
     # Run main analysis with comprehensive output
     nodes, elements, displacements = main(frame)
 
